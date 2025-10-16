@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <title>Red PurpleAir Puerto Montt — PM2.5 ajustado</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <!-- Leaflet -->
   <link
     rel="stylesheet"
@@ -24,39 +25,33 @@
     html, body { height: 100%; margin: 0; }
     #map { height: 100%; position: relative; }
 
+    .title {
+      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+      z-index: 1000; background: rgba(255,255,255,.95);
+      border: 1px solid #ddd; border-radius: 10px; padding: 8px 14px;
+      font: 16px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      box-shadow: 0 2px 10px rgba(0,0,0,.08); white-space: nowrap;
+    }
+
     .legend {
-      position: absolute;
-      bottom: 16px;
-      left: 16px;
-      z-index: 1000;
-      background: #fff;
-      border: 1px solid #aaa;
-      border-radius: 8px;
-      padding: 10px 12px;
-      font: 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      position: absolute; bottom: 16px; left: 16px; z-index: 1000;
+      background: #fff; border: 1px solid #aaa; border-radius: 10px;
+      padding: 10px 12px; font: 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
       box-shadow: 0 2px 10px rgba(0,0,0,.1);
     }
     .legend-row { display:flex; align-items:center; gap:8px; margin:6px 0; }
     .sw { width:18px; height:12px; border:1px solid #888; border-radius:2px; }
 
-    .title {
-      position: absolute;
-      z-index: 1000;
-      top: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(255,255,255,.9);
-      border: 1px solid #ddd; border-radius: 8px;
-      padding: 8px 12px;
-      font: 16px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      box-shadow: 0 2px 10px rgba(0,0,0,.08);
-      white-space: nowrap;
-    }
+    .ua { position:absolute; right:16px; bottom:16px; z-index:1000;
+      background:#fff; border:1px solid #ddd; border-radius:10px; padding:6px 10px; font:12px system-ui;
+      box-shadow:0 2px 8px rgba(0,0,0,.06); }
   </style>
 </head>
 <body>
   <div id="map"></div>
+
   <div class="title">Red PurpleAir Puerto Montt — PM2.5 ajustado (0.2564·x + 0.0972)</div>
+
   <div class="legend">
     <div><strong>PM2.5 ajustado (µg/m³)</strong></div>
     <div class="legend-row"><span class="sw" style="background:#00c853"></span> 0–12</div>
@@ -66,11 +61,15 @@
     <div style="margin-top:6px; font-size:12px; color:#555;">Actualiza cada 5 min</div>
   </div>
 
+  <div class="ua">Red Austral de Vigilancia de la Calidad del Aire · UACh</div>
+
 <script>
-/* ========= CONFIGURACIÓN ========= */
-const USE_PROXY = false;  // cambia a true si usas proxy Apps Script
-const API_KEY = "1CF703C5-AA9A-11F0-BDE5-4201AC1DC121";
-const PROXY_URL = "PEGAR_AQUI_URL_DEL_WEBAPP_EXEC";
+/* =================== CONFIG =================== */
+const USE_PROXY = true; // true = usa proxy Apps Script; false = usa API directa
+const PROXY_URL = "PEGAR_AQUI_URL_DEL_WEBAPP_EXEC"; // si USE_PROXY=true
+
+// Si vas directo (no recomendado en público):
+const API_KEY = "PON_AQUI_TU_API_KEY_SI_USE_PROXY_ES_FALSE";
 
 const SENSORS = [
   { id: 208425, name: "Coihuin" },
@@ -82,69 +81,106 @@ const SENSORS = [
 const CAL_A = 0.2564, CAL_B = 0.0972;
 const CENTER = [-41.4718, -72.9396];
 const ZOOM = 12;
-const REFRESH_MS = 5 * 60 * 1000;
-/* ================================= */
+const REFRESH_MS = 5 * 60 * 1000;  // 5 min
+/* ============================================== */
 
+// Mapa base
 const map = L.map('map').setView(CENTER, ZOOM);
 
-// Fondos
 const baseOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+  maxZoom: 19, attribution: '&copy; OpenStreetMap'
 });
-const baseSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-  maxZoom: 20, attribution: '&copy; Esri, Maxar, Earthstar Geographics'
-});
+const baseSat = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 20, attribution: '&copy; Esri, Maxar, Earthstar Geographics' }
+);
 const baseMaps = { "Mapa": baseOSM, "Satélite": baseSat };
 baseSat.addTo(map);
 L.control.layers(baseMaps, null, { position: 'topleft' }).addTo(map);
+L.control.scale({ position: 'bottomright', metric: true, imperial: false }).addTo(map);
 
-// === CARGAR KML DEL ÁREA URBANA ===
-omnivore.kml('LU_Puerto_Mont.KML')
-  .on('ready', function() {
-    this.setStyle({
-      color: '#1565c0',
-      weight: 2,
-      fillColor: '#64b5f6',
-      fillOpacity: 0.15
-    });
-    map.fitBounds(this.getBounds());
+// === KML (mismo directorio que el HTML) ===
+omnivore.kml('LU_Puerto_Montt.kml')
+  .on('ready', function () {
+    this.setStyle({ color:'#1565c0', weight:2, fillColor:'#64b5f6', fillOpacity:0.15 });
+    try { map.fitBounds(this.getBounds(), { padding: [20,20] }); } catch(e) {}
   })
-  .on('error', e => console.error("Error cargando KML:", e.error))
+  .on('error', e => console.error('Error cargando KML:', e))
   .addTo(map);
 
-// === SENSORES PURPLEAIR ===
+// Utilidades
+function colorFor(pm){
+  if (pm == null || isNaN(pm)) return "#9e9e9e";
+  if (pm <= 12.0) return "#00c853";
+  if (pm <= 35.4) return "#ffd600";
+  if (pm <= 55.4) return "#ff6d00";
+  return "#d50000";
+}
+function fmt(n,d=1){ return (n==null||isNaN(n)) ? "—" : Number(n).toFixed(d).replace(".", ","); }
+
+async function fetchSensor(id){
+  const fields = "pm2.5_atm,latitude,longitude,name,last_seen";
+  if (USE_PROXY){
+    const url = `${PROXY_URL}?id=${id}&fields=${encodeURIComponent(fields)}`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`Proxy HTTP ${r.status}`);
+    return r.json();
+  } else {
+    const url = `https://api.purpleair.com/v1/sensors/${id}?fields=${encodeURIComponent(fields)}`;
+    const r = await fetch(url, { headers: { "X-API-Key": API_KEY } });
+    if (!r.ok) throw new Error(`PurpleAir HTTP ${r.status}`);
+    return r.json();
+  }
+}
+
 const markers = new Map();
-function colorFor(pm){ if(pm<=12)return"#00c853"; if(pm<=35.4)return"#ffd600"; if(pm<=55.4)return"#ff6d00"; return"#d50000";}
-async function fetchSensor(id){const f="pm2.5_atm,latitude,longitude,name,last_seen";
- const url=USE_PROXY?`${PROXY_URL}?id=${id}&fields=${encodeURIComponent(f)}`:`https://api.purpleair.com/v1/sensors/${id}?fields=${encodeURIComponent(f)}`;
- const opt=USE_PROXY?{}:{headers:{"X-API-Key":API_KEY}}; const r=await fetch(url,opt);
- if(!r.ok)throw new Error(r.statusText); return r.json();}
-function fmt(n,d=1){return (n==null||isNaN(n))?"—":Number(n).toFixed(d).replace(".",",");}
 
 async function updateOnce(){
- for(const s of SENSORS){
-  try{
-   const js=await fetchSensor(s.id);
-   const sensor=js.sensor||{}; const raw=+sensor["pm2.5_atm"];
-   const adj=Math.max(0,CAL_A*raw+CAL_B);
-   const lat=+sensor.latitude, lon=+sensor.longitude;
-   const name=sensor.name||s.name; const seen=sensor.last_seen?new Date(sensor.last_seen*1000):null;
-   const html=`<div style="font:14px/1.2 system-ui;">
-     <div style="font-weight:600;margin-bottom:4px;">${name}</div>
-     <div><b>PM2.5 ajustado:</b> ${fmt(adj)} µg/m³</div>
-     <div><small>Calibración: 0.2564·x + 0.0972</small></div>
-     <hr style="border:none;border-top:1px solid #eee;margin:6px 0;">
-     <div>PM2.5 bruto: ${fmt(raw)} µg/m³</div>
-     <div>ID: ${s.id}</div>
-     <div>Lat/Lon: ${fmt(lat,5)} , ${fmt(lon,5)}</div>
-     <div>Última lectura: ${seen?seen.toLocaleString():"—"}</div></div>`;
-   const color=colorFor(adj); const key=String(s.id);
-   if(!markers.has(key)){const m=L.circleMarker([lat,lon],{radius:10,color,fillColor:color,fillOpacity:.85,weight:2}).addTo(map);
-     m.bindPopup(html); markers.set(key,m);}
-   else{const m=markers.get(key);m.setStyle({color,fillColor:color});m.setLatLng([lat,lon]);m.setPopupContent(html);}
-  }catch(e){console.error("Error sensor",s.id,e);}
- }}
-updateOnce(); setInterval(updateOnce,REFRESH_MS);
+  for (const s of SENSORS){
+    try{
+      const js = await fetchSensor(s.id);
+      const sensor = js.sensor || {};
+      const pm_raw = Number(sensor["pm2.5_atm"]);
+      const pm_adj = Math.max(0, CAL_A * pm_raw + CAL_B);
+      const lat = Number(sensor.latitude), lon = Number(sensor.longitude);
+      const name = sensor.name || s.name || `Sensor ${s.id}`;
+      const seen = sensor.last_seen ? new Date(sensor.last_seen * 1000) : null;
+
+      const html = `
+        <div style="font:14px/1.2 system-ui;">
+          <div style="font-weight:600;margin-bottom:4px;">${name}</div>
+          <div><b>PM2.5 ajustado:</b> ${fmt(pm_adj)} µg/m³</div>
+          <div><small>Calibración: 0.2564·x + 0.0972</small></div>
+          <hr style="border:none;border-top:1px solid #eee;margin:6px 0;">
+          <div>PM2.5 bruto: ${fmt(pm_raw)} µg/m³</div>
+          <div>ID: ${s.id}</div>
+          <div>Lat/Lon: ${fmt(lat,5)} , ${fmt(lon,5)}</div>
+          <div>Última lectura: ${seen ? seen.toLocaleString() : "—"}</div>
+        </div>`;
+
+      const color = colorFor(pm_adj);
+      const key = String(s.id);
+
+      if (!markers.has(key)){
+        const m = L.circleMarker([lat, lon], {
+          radius: 10, color, fillColor: color, fillOpacity: 0.85, weight: 2
+        }).addTo(map);
+        m.bindPopup(html);
+        markers.set(key, m);
+      } else {
+        const m = markers.get(key);
+        m.setStyle({ color, fillColor: color });
+        m.setLatLng([lat, lon]);
+        m.setPopupContent(html);
+      }
+    } catch (e){
+      console.error("Error sensor", s.id, e);
+    }
+  }
+}
+
+updateOnce();
+setInterval(updateOnce, REFRESH_MS);
 </script>
 </body>
 </html>
